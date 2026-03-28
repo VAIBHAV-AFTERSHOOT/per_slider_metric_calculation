@@ -129,21 +129,28 @@ def write_incremental_summary(
     r2: float,
     delta_e_result: Optional[dict],
     is_header: bool = False,
+    missing_sliders: Optional[list[str]] = None,
+    overall_csv: Optional[str] = None,
+    pid_summary_txt: Optional[str] = None,
+    pid_summary_csv: Optional[str] = None,
 ):
-    """Append a row to the running summary file (and print it)."""
+    """Append a row to the running summary file, overall CSV, and per-PID summary files."""
     delta_e = _fmt(delta_e_result.get("mean_delta_e_mean") if delta_e_result else None)
     delta_e_p75 = _fmt(delta_e_result.get("mean_delta_e_p75") if delta_e_result else None)
     psnr = _fmt(delta_e_result.get("psnr_mean") if delta_e_result else None)
     ssim = _fmt(delta_e_result.get("ssim_mean") if delta_e_result else None, 4)
     images = str(delta_e_result.get("metrics_images_count") if delta_e_result else "N/A")
+    missing_str = ", ".join(missing_sliders) if missing_sliders else ""
 
     header = (
-        f"{'PID':<38} | {'Slider':<28} | {'MAE':<8} | {'R2':<8} | "
-        f"{'Delta-E':<8} | {'dE-p75':<8} | {'PSNR':<8} | {'SSIM':<8} | {'Images':<8}"
+        f"{'PID':<38} | {'Group':<28} | {'MAE':<8} | {'R2':<8} | "
+        f"{'Delta-E':<8} | {'dE-p75':<8} | {'PSNR':<8} | {'SSIM':<8} | "
+        f"{'Images':<8} | {'Missing Sliders'}"
     )
     row = (
         f"{pid:<38} | {slider_label:<28} | {_fmt(mae, 4):<8} | {_fmt(r2, 4):<8} | "
-        f"{delta_e:<8} | {delta_e_p75:<8} | {psnr:<8} | {ssim:<8} | {images:<8}"
+        f"{delta_e:<8} | {delta_e_p75:<8} | {psnr:<8} | {ssim:<8} | "
+        f"{images:<8} | {missing_str}"
     )
 
     if is_header:
@@ -157,6 +164,39 @@ def write_incremental_summary(
     with open(summary_file, "a") as f:
         f.write(row + "\n")
     print(row)
+
+    # --- Incremental overall CSV ---
+    csv_row = {
+        "pid": pid,
+        "group": slider_label,
+        "mae": mae,
+        "r2": r2,
+        "delta_e": delta_e_result.get("mean_delta_e_mean") if delta_e_result else None,
+        "delta_e_p75": delta_e_result.get("mean_delta_e_p75") if delta_e_result else None,
+        "psnr": delta_e_result.get("psnr_mean") if delta_e_result else None,
+        "ssim": delta_e_result.get("ssim_mean") if delta_e_result else None,
+        "images": delta_e_result.get("metrics_images_count") if delta_e_result else None,
+        "missing_sliders": missing_str,
+        "success": delta_e_result.get("success", False) if delta_e_result else False,
+    }
+    row_df = pd.DataFrame([csv_row])
+
+    if overall_csv:
+        write_header = is_header or not os.path.exists(overall_csv)
+        row_df.to_csv(overall_csv, mode="a", header=write_header, index=False)
+
+    # --- Per-PID summary files ---
+    if pid_summary_csv:
+        pid_csv_header = not os.path.exists(pid_summary_csv)
+        row_df.to_csv(pid_summary_csv, mode="a", header=pid_csv_header, index=False)
+
+    if pid_summary_txt:
+        pid_txt_exists = os.path.exists(pid_summary_txt)
+        with open(pid_summary_txt, "a") as f:
+            if not pid_txt_exists:
+                f.write(header + "\n")
+                f.write("-" * len(header) + "\n")
+            f.write(row + "\n")
 
 
 # ---------------------------------------------------------------------------
@@ -172,12 +212,21 @@ def process_pid(
     overall_deltaE: bool,
     no_cache: bool,
     summary_file: str,
+    overall_csv: str,
     is_first_pid: bool,
     all_results: list,
 ):
     """Full pipeline for a single PID."""
     pid_output = os.path.join(output_dir, pid)
     os.makedirs(pid_output, exist_ok=True)
+
+    # Per-PID summary paths
+    pid_summary_csv = os.path.join(pid_output, "pid_summary.csv")
+    pid_summary_txt = os.path.join(pid_output, "pid_summary.txt")
+    # Remove stale per-PID summaries from prior runs
+    for f in [pid_summary_csv, pid_summary_txt]:
+        if os.path.exists(f):
+            os.remove(f)
     
     # Setup profile-specific logger
     profile_log_path = os.path.join(pid_output, "profile_run.log")
@@ -224,16 +273,19 @@ def process_pid(
                     comparisons=[("Base", "Custom")],
                     dngs_dir=dngs_dir,
                     output_dir=pid_output,
-                    no_cache=False,  # don't clean up yet
+                    no_cache=False,
                 )
                 overall_result = overall_results.get("OVERALL", {})
                 write_incremental_summary(
                     summary_file, pid, "OVERALL", None, None, overall_result,
                     is_header=is_first_pid,
+                    overall_csv=overall_csv,
+                    pid_summary_txt=pid_summary_txt,
+                    pid_summary_csv=pid_summary_csv,
                 )
                 all_results.append({
                     "pid": pid,
-                    "slider": "OVERALL",
+                    "group": "OVERALL",
                     "mae": None,
                     "r2": None,
                     "delta_e": overall_result.get("mean_delta_e_mean") if overall_result else None,
@@ -241,9 +293,10 @@ def process_pid(
                     "psnr": overall_result.get("psnr_mean") if overall_result else None,
                     "ssim": overall_result.get("ssim_mean") if overall_result else None,
                     "images": overall_result.get("metrics_images_count") if overall_result else None,
+                    "missing_sliders": "",
                     "success": overall_result.get("success", False) if overall_result else False,
                 })
-                is_first_pid = False  # Next summary rows shouldn't print header again
+                is_first_pid = False
             except ImportError:
                 log.error("A_B_utils not found locally — skipping OVERALL Delta-E")
 
@@ -260,25 +313,27 @@ def process_pid(
         mae_r2_df.to_csv(mae_csv, index=False)
         log.info(f"  Saved MAE/R² to {mae_csv}")
 
-        # Step 4: Filter sliders
-        selected = filter_sliders(all_sliders, mae_r2_df, explicit_sliders, ignore_negative_r2)
-        log.info(f"  Selected sliders for Delta-E: {selected}")
+        # Step 4: Filter sliders — returns list of (group_name, missing_sliders)
+        selected_with_missing = filter_sliders(all_sliders, mae_r2_df, explicit_sliders, ignore_negative_r2)
+        selected = [grp for grp, _ in selected_with_missing]
+        missing_map = {grp: missing for grp, missing in selected_with_missing}
+        log.info(f"  Selected model groups for Delta-E: {selected}")
 
         if not selected:
-            log.warning(f"[{pid[:8]}] No sliders remaining after filtering — skipping")
+            log.warning(f"[{pid[:8]}] No model groups remaining after filtering — skipping")
             return
 
         # Step 5: Build a single multi-slider JSON
         json_dir = os.path.join(pid_output, "slider_jsons")
         json_path = os.path.join(json_dir, "combined_metrics.json")
         
-        log.info(f"\n--- Building Multi-Slider JSON for {len(selected)} sliders ---")
+        log.info(f"\n--- Building Multi-Slider JSON for {len(selected)} model groups ---")
         result_path, identical_groups, n_images = build_multi_slider_json(
             df, selected, all_sliders, json_path
         )
 
         if result_path is None:
-            log.error(f"[{pid[:8]}] Failed to build multi-slider JSON — skipping tracking")
+            log.error(f"[{pid[:8]}] Failed to build multi-slider JSON — skipping")
             return
 
         # Prepare active comparisons
@@ -287,7 +342,7 @@ def process_pid(
             if grp not in identical_groups:
                 comparisons.append(("Base", f"Custom_{grp}"))
 
-        # Output results
+        # Run bulk Delta-E
         bulk_results = {}
         if comparisons:
             bulk_results = run_delta_e_for_profile(
@@ -302,17 +357,18 @@ def process_pid(
         # Log incrementally
         for i, group_entry in enumerate(selected):
             label = group_entry
+            group_missing = missing_map.get(label, [])
 
-            # Dynamically compute MAE and R² means across all target sliders in this group
-            actual_sliders = resolve_slider_group(label, all_sliders)
-            target_lower = {s.lower() for s in actual_sliders}
+            # Dynamically compute MAE and R² means across ACTIVE (present) sliders only
+            active_sliders, _ = resolve_slider_group(label, all_sliders)
+            target_lower = {s.lower() for s in active_sliders}
             
             group_rows = mae_r2_df[mae_r2_df["Slider"].str.lower().isin(target_lower)]
             slider_mae = group_rows["MAE"].mean() if not group_rows.empty else None
             slider_r2 = group_rows["R2"].mean() if not group_rows.empty else None
 
             if label in identical_groups:
-                log.info(f"  [{label}] Base and Custom practically identical — bypassing Delta-E (0.00)")
+                log.info(f"  [{label}] Base and Custom identical — bypassing Delta-E (0.00)")
                 delta_e_result = {
                     "slider": label,
                     "success": True,
@@ -329,11 +385,16 @@ def process_pid(
             write_incremental_summary(
                 summary_file, pid, label, slider_mae, slider_r2, delta_e_result,
                 is_header=(is_first_pid and i == 0),
+                missing_sliders=group_missing,
+                overall_csv=overall_csv,
+                pid_summary_txt=pid_summary_txt,
+                pid_summary_csv=pid_summary_csv,
             )
 
+            missing_str = ", ".join(group_missing) if group_missing else ""
             all_results.append({
                 "pid": pid,
-                "slider": label,
+                "group": label,
                 "mae": slider_mae,
                 "r2": slider_r2,
                 "delta_e": delta_e_result.get("mean_delta_e_mean") if delta_e_result else None,
@@ -341,6 +402,7 @@ def process_pid(
                 "psnr": delta_e_result.get("psnr_mean") if delta_e_result else None,
                 "ssim": delta_e_result.get("ssim_mean") if delta_e_result else None,
                 "images": delta_e_result.get("metrics_images_count") if delta_e_result else None,
+                "missing_sliders": missing_str,
                 "success": delta_e_result.get("success", False) if delta_e_result else False,
             })
 
@@ -419,9 +481,10 @@ def main():
     
     log.info(f"Processing {len(pids)} PID(s)")
 
-    # Summary file
+    # Summary files
     timestamp = datetime.now(IST).strftime("%Y%m%d_%H%M%S")
     summary_file = os.path.join(args.output_dir, f"summary_{timestamp}.txt")
+    overall_csv = os.path.join(args.output_dir, f"overall_summary_{timestamp}.csv")
 
     all_results = []
 
@@ -441,6 +504,7 @@ def main():
             overall_deltaE=args.overall_deltaE,
             no_cache=args.no_cache,
             summary_file=summary_file,
+            overall_csv=overall_csv,
             is_first_pid=(idx == 0),
             all_results=all_results,
         )
@@ -451,16 +515,17 @@ def main():
         agg_csv = os.path.join(args.output_dir, f"aggregated_results_{timestamp}.csv")
         results_df.to_csv(agg_csv, index=False)
         log.info(f"\nAggregated results saved to: {agg_csv}")
+        log.info(f"Incremental overall CSV: {overall_csv}")
 
-        # Print per-slider aggregate summary (mean across all PIDs)
+        # Print per-group aggregate summary (mean across all PIDs)
         print(f"\n{'='*70}")
         print("AGGREGATE SUMMARY — Mean across all PIDs")
         print(f"{'='*70}")
-        for slider in results_df["slider"].unique():
-            subset = results_df[results_df["slider"] == slider]
+        for group in results_df["group"].unique():
+            subset = results_df[results_df["group"] == group]
             successful = subset[subset["success"] == True]
             print(
-                f"  {slider:<28} | "
+                f"  {group:<28} | "
                 f"MAE={_fmt(subset['mae'].mean(), 4):<8} | "
                 f"R2={_fmt(subset['r2'].mean(), 4):<8} | "
                 f"Delta-E={_fmt(successful['delta_e'].mean()) if not successful.empty else 'N/A':<8} | "
@@ -473,11 +538,11 @@ def main():
             f.write(f"\n{'='*70}\n")
             f.write("AGGREGATE SUMMARY — Mean across all PIDs\n")
             f.write(f"{'='*70}\n")
-            for slider in results_df["slider"].unique():
-                subset = results_df[results_df["slider"] == slider]
+            for group in results_df["group"].unique():
+                subset = results_df[results_df["group"] == group]
                 successful = subset[subset["success"] == True]
                 f.write(
-                    f"  {slider:<28} | "
+                    f"  {group:<28} | "
                     f"MAE={_fmt(subset['mae'].mean(), 4):<8} | "
                     f"R2={_fmt(subset['r2'].mean(), 4):<8} | "
                     f"Delta-E={_fmt(successful['delta_e'].mean()) if not successful.empty else 'N/A':<8} | "
@@ -486,6 +551,7 @@ def main():
                 )
 
     log.info(f"\nSummary file: {summary_file}")
+    log.info(f"Overall CSV: {overall_csv}")
     log.info("Done!")
 
 

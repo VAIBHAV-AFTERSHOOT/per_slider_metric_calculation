@@ -123,10 +123,11 @@ def build_multi_slider_json(
         log.error(f"No image ID column found. Available: {df.columns.tolist()}")
         return None, set(), 0
 
-    # Pre-resolve target groups to actual column sets
+    # Pre-resolve target groups to actual column sets (only active sliders)
     resolved_groups = {}
     for grp in slider_groups:
-        resolved_groups[grp] = {s.lower() for s in resolve_slider_group(grp, all_sliders)}
+        active, _missing = resolve_slider_group(grp, all_sliders)
+        resolved_groups[grp] = {s.lower() for s in active}
 
     # Discover all slider names (from Base_* columns)
     all_slider_cols = {}
@@ -199,12 +200,19 @@ def filter_sliders(
     mae_r2_df: pd.DataFrame,
     explicit_sliders: Optional[list[str]],
     ignore_negative_r2: bool,
-) -> list[str]:
+) -> list[tuple[str, list[str]]]:
     """
-    Returns a list of Valid active MODEL_GROUPS.
+    Returns a list of (group_name, missing_sliders) tuples for active MODEL_GROUPS.
+
+    Previous logic: Required ALL sliders in a group to be present (strict subset).
+                    If even one slider was absent, the entire group was silently skipped.
+
+    New logic:      A group is included if AT LEAST ONE slider is present in predictions.csv
+                    (intersection >= 1). Any missing sliders are tracked and returned so they
+                    can be reported in logs and summaries.
     """
     target_groups = []
-    
+
     # 1. Determine explicitly requested groups (or all if None)
     if explicit_sliders:
         req_lower_map = {s.lower(): s for s in explicit_sliders}
@@ -217,39 +225,53 @@ def filter_sliders(
     # Lowercase lookup for available raw sliders
     available_raw_lower = {s.lower() for s in all_raw_sliders}
 
-    filtered_groups = []
+    filtered_groups: list[tuple[str, list[str]]] = []
     for grp in target_groups:
         req_sliders = MODEL_GROUPS[grp]
         req_lower = {s.lower() for s in req_sliders}
-        
-        # 2. Assert this entire group is available in the extracted CSV columns
-        if not req_lower.issubset(available_raw_lower):
+
+        # 2. Include group if at least 1 slider is present (was: strict subset)
+        present_lower = req_lower & available_raw_lower
+        if not present_lower:
+            log.info(f"  Skipping group '{grp}' — none of its sliders found in CSV")
             continue
 
-        # 3. Check negative Mean R2 if ignoring
+        missing = [s for s in req_sliders if s.lower() not in available_raw_lower]
+
+        # 3. Check negative Mean R² (only across present sliders)
         if ignore_negative_r2 and not mae_r2_df.empty:
-            group_rows = mae_r2_df[mae_r2_df["Slider"].str.lower().isin(req_lower)]
+            group_rows = mae_r2_df[mae_r2_df["Slider"].str.lower().isin(present_lower)]
             mean_r2 = group_rows["R2"].mean() if not group_rows.empty else -1.0
             if mean_r2 < 0.0:
                 log.info(f"  Skipping group '{grp}' (Mean R²={mean_r2:.4f} < 0)")
                 continue
-            
-        filtered_groups.append(grp)
+
+        if missing:
+            log.info(f"  Group '{grp}': {len(present_lower)}/{len(req_sliders)} sliders present. "
+                     f"Missing: {missing}")
+        else:
+            log.info(f"  Group '{grp}': all {len(req_sliders)} sliders present")
+
+        filtered_groups.append((grp, missing))
 
     return filtered_groups
 
 
-def resolve_slider_group(group_name: str, all_raw_sliders: list[str]) -> list[str]:
+def resolve_slider_group(group_name: str, all_raw_sliders: list[str]) -> tuple[list[str], list[str]]:
     """
-    Given a MODEL_GROUP string, returns the literal list of slider names.
+    Given a MODEL_GROUP string, returns (active_sliders, missing_sliders).
+    active_sliders are those actually found in the CSV; missing are defined but absent.
     """
+    available_lower = {s.lower() for s in all_raw_sliders}
+
     if group_name in MODEL_GROUPS:
-        return MODEL_GROUPS[group_name]
-    
-    # Fallback to literal matches if somehow bypassed
-    actual_mapped = []
+        defined = MODEL_GROUPS[group_name]
+        active = [s for s in defined if s.lower() in available_lower]
+        missing = [s for s in defined if s.lower() not in available_lower]
+        return active, missing
+
+    # Fallback to literal match
     for raw in all_raw_sliders:
         if raw.lower() == group_name.lower():
-            actual_mapped.append(raw)
-            break
-    return actual_mapped if actual_mapped else [group_name]
+            return [raw], []
+    return [group_name], []
