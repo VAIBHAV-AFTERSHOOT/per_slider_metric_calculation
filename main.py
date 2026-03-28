@@ -300,17 +300,16 @@ def process_pid(
             )
 
         # Log incrementally
-        for i, slider_entry in enumerate(selected):
-            label = slider_entry
+        for i, group_entry in enumerate(selected):
+            label = group_entry
 
-            if label == "WB":
-                wb_rows = mae_r2_df[mae_r2_df["Slider"].str.lower().isin({"temperature", "tint"})]
-                slider_mae = wb_rows["MAE"].mean() if not wb_rows.empty else None
-                slider_r2 = wb_rows["R2"].mean() if not wb_rows.empty else None
-            else:
-                match = mae_r2_df[mae_r2_df["Slider"].str.lower() == label.lower()]
-                slider_mae = match.iloc[0]["MAE"] if not match.empty else None
-                slider_r2 = match.iloc[0]["R2"] if not match.empty else None
+            # Dynamically compute MAE and R² means across all target sliders in this group
+            actual_sliders = resolve_slider_group(label, all_sliders)
+            target_lower = {s.lower() for s in actual_sliders}
+            
+            group_rows = mae_r2_df[mae_r2_df["Slider"].str.lower().isin(target_lower)]
+            slider_mae = group_rows["MAE"].mean() if not group_rows.empty else None
+            slider_r2 = group_rows["R2"].mean() if not group_rows.empty else None
 
             if label in identical_groups:
                 log.info(f"  [{label}] Base and Custom practically identical — bypassing Delta-E (0.00)")

@@ -3,23 +3,16 @@ Slider-level metrics: MAE/R² computation and single-slider-isolated JSON genera
 """
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
 import pandas as pd
 
+from config import MODEL_GROUPS
+
 log = logging.getLogger("per_slider_delta_e")
-
-KNOWN_NON_REGRESSION_SLIDERS = {
-    "parametrichighlightsplit",
-    "parametricmidtonesplit",
-    "parametricshadowsplit",
-}
-
-# Temperature and Tint are always treated together as "WB"
-WB_SLIDERS = {"temperature", "tint"}
-
 
 # ---------------------------------------------------------------------------
 # Slider discovery
@@ -29,7 +22,6 @@ def discover_sliders(df: pd.DataFrame) -> list[str]:
     """
     Scan predictions.csv columns for all Base_{X} / Custom_{X} pairs.
     Returns slider names (original casing from the CSV).
-    Excludes known non-regression sliders.
     """
     sliders = []
     seen_lower = set()
@@ -37,8 +29,6 @@ def discover_sliders(df: pd.DataFrame) -> list[str]:
         if not col.startswith("Custom_"):
             continue
         slider = col[len("Custom_"):]
-        if slider.lower() in KNOWN_NON_REGRESSION_SLIDERS:
-            continue
         base_col = f"Base_{slider}"
         if base_col not in df.columns:
             continue
@@ -123,18 +113,6 @@ def build_multi_slider_json(
       - "Base" dict = all Base_* values (ground truth, untouched)
       - "Custom_{Group}" dicts = Base_* values EXCEPT for the specific slider group,
                                  which use Custom_* values.
-    
-    If a Custom_{Group} dictionary ends up being perfectly identical to Base
-    across all images, it is bypassed and returned in the identical_groups set.
-
-    Args:
-        df: predictions DataFrame
-        slider_groups: list of grouped slider names to isolate (e.g. from filter_sliders)
-        all_sliders: original list of all discovered sliders in the CSV
-        output_path: where to write the JSON
-
-    Returns:
-        (Path to written JSON, set of identical groups, image count)
     """
     id_col = None
     for c in ["img_path", "image_id", "id_global", "image_name"]:
@@ -212,91 +190,66 @@ def build_multi_slider_json(
     skipped = len(identical_groups)
     active = len(slider_groups) - skipped
     
-    log.info(f"  Built JSON with {n_images} images. Combinations: {active} active, {skipped} identical (skipped).")
+    log.info(f"  Built JSON with {n_images} images. Combinations: {active} active : {slider_groups}, {skipped} identical (skipped) : {identical_groups}.")
     return output_path, identical_groups, n_images
 
 
-# Need os for makedirs
-import os
-
-
 def filter_sliders(
-    all_sliders: list[str],
+    all_raw_sliders: list[str],
     mae_r2_df: pd.DataFrame,
-    explicit_sliders: Optional[list[str]] = None,
-    ignore_negative_r2: bool = False,
+    explicit_sliders: Optional[list[str]],
+    ignore_negative_r2: bool,
 ) -> list[str]:
     """
-    Filter the slider list based on user args.
-
-    - Case-insensitive matching for explicit_sliders
-    - Optionally skip sliders with negative R²
-    - Always groups Temperature + Tint together as "WB"
-
-    Returns a list of slider names (or ["WB"] pseudo-entry for the temp+tint group).
+    Returns a list of Valid active MODEL_GROUPS.
     """
-    # Build a case-insensitive index of available sliders
-    lower_to_original = {s.lower(): s for s in all_sliders}
-    available_lower = set(lower_to_original.keys())
-
-    # Start with all sliders if no explicit list
+    target_groups = []
+    
+    # 1. Determine explicitly requested groups (or all if None)
     if explicit_sliders:
-        selected_lower = set()
-        for s in explicit_sliders:
-            sl = s.lower()
-            if sl in available_lower:
-                selected_lower.add(sl)
-            elif sl == "wb":
-                # WB = Temperature + Tint
-                selected_lower.update(WB_SLIDERS & available_lower)
-            else:
-                log.warning(f"Slider '{s}' not found in predictions.csv (case-insensitive)")
+        req_lower_map = {s.lower(): s for s in explicit_sliders}
+        for grp_name in MODEL_GROUPS.keys():
+            if grp_name.lower() in req_lower_map:
+                target_groups.append(grp_name)
     else:
-        selected_lower = available_lower.copy()
+        target_groups = list(MODEL_GROUPS.keys())
 
-    # Optionally filter negative R²
-    if ignore_negative_r2 and not mae_r2_df.empty:
-        negative_sliders = set(
-            mae_r2_df[mae_r2_df["R2"] < 0]["Slider"].str.lower().tolist()
-        )
-        before = len(selected_lower)
-        selected_lower -= negative_sliders
-        dropped = before - len(selected_lower)
-        if dropped:
-            log.info(f"Dropped {dropped} slider(s) with negative R²")
+    # Lowercase lookup for available raw sliders
+    available_raw_lower = {s.lower() for s in all_raw_sliders}
 
-    # Group Temperature + Tint into "WB"
-    has_temp = "temperature" in selected_lower
-    has_tint = "tint" in selected_lower
+    filtered_groups = []
+    for grp in target_groups:
+        req_sliders = MODEL_GROUPS[grp]
+        req_lower = {s.lower() for s in req_sliders}
+        
+        # 2. Assert this entire group is available in the extracted CSV columns
+        if not req_lower.issubset(available_raw_lower):
+            continue
 
-    result = []
-    wb_added = False
+        # 3. Check negative Mean R2 if ignoring
+        if ignore_negative_r2 and not mae_r2_df.empty:
+            group_rows = mae_r2_df[mae_r2_df["Slider"].str.lower().isin(req_lower)]
+            mean_r2 = group_rows["R2"].mean() if not group_rows.empty else -1.0
+            if mean_r2 < 0.0:
+                log.info(f"  Skipping group '{grp}' (Mean R²={mean_r2:.4f} < 0)")
+                continue
+            
+        filtered_groups.append(grp)
 
-    for sl in sorted(selected_lower):
-        if sl in WB_SLIDERS:
-            if not wb_added and has_temp and has_tint:
-                result.append("WB")
-                wb_added = True
-            elif not wb_added:
-                # Only one of temp/tint available, add individually
-                result.append(lower_to_original.get(sl, sl))
-        else:
-            result.append(lower_to_original.get(sl, sl))
-
-    return result
+    return filtered_groups
 
 
-def resolve_slider_group(slider_entry: str, all_sliders: list[str]) -> list[str]:
+def resolve_slider_group(group_name: str, all_raw_sliders: list[str]) -> list[str]:
     """
-    Resolve a slider entry to actual column names.
-    "WB" -> ["Temperature", "Tint"] (using actual casing from CSV)
-    Otherwise -> [slider_entry]
+    Given a MODEL_GROUP string, returns the literal list of slider names.
     """
-    if slider_entry == "WB":
-        lower_to_original = {s.lower(): s for s in all_sliders}
-        group = []
-        for wb in sorted(WB_SLIDERS):
-            if wb in lower_to_original:
-                group.append(lower_to_original[wb])
-        return group
-    return [slider_entry]
+    if group_name in MODEL_GROUPS:
+        return MODEL_GROUPS[group_name]
+    
+    # Fallback to literal matches if somehow bypassed
+    actual_mapped = []
+    for raw in all_raw_sliders:
+        if raw.lower() == group_name.lower():
+            actual_mapped.append(raw)
+            break
+    return actual_mapped if actual_mapped else [group_name]
