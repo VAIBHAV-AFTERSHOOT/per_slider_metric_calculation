@@ -32,7 +32,7 @@ EDITOR_PATH = "/home/ubuntu/workspace/DNG_Converter/Adobe DNG Converter.exe"
 METRICS_WORKERS = 6
 
 # Number of parallel workers for profile downloading/processing
-MAX_DOWNLOAD_WORKERS = os.cpu_count() - 2
+MAX_DOWNLOAD_WORKERS = os.cpu_count()-2
 
 # Default comparisons for metrics calculation
 # Default comparisons for metrics calculation
@@ -42,7 +42,7 @@ DEFAULT_COMPARISONS = [("Base", "Custom")]
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
 SLACK_CHANNEL_ID = os.getenv("SLACK_CHANNEL_ID")
 SLACK_CHANNEL_ID_2 = os.getenv("SLACK_CHANNEL_ID_2")
-SEND_SLACK_NOTIFICATIONS = False  # Set to False to disable Slack notifications
+SEND_SLACK_NOTIFICATIONS = False # Set to False to disable Slack notifications
 
 # =============================================================================
 # Pipeline Semantic Model Groupings
@@ -55,69 +55,35 @@ MODEL_GROUPS = {
     "Whites_Blacks": ["Whites", "Blacks"],
     "Presence_CTD": ["Clarity", "Texture", "Dehaze"],
     "Presence_SV": ["Saturation", "Vibrance"],
-    "Detail_Sharpness": [
-        "Sharpness",
-        "SharpenRadius",
-        "SharpenEdgeMasking",
-        "SharpenDetail",
-    ],
+    "Detail_Sharpness": ["Sharpness", "SharpenRadius", "SharpenEdgeMasking", "SharpenDetail"],
     "Detail_NoiseReduction": [
-        "LuminanceNoiseReductionContrast",
-        "LuminanceNoiseReductionDetail",
-        "LuminanceSmoothing",
-        "ColorNoiseReduction",
-        "ColorNoiseReductionDetail",
-        "ColorNoiseReductionSmoothness",
+        "LuminanceNoiseReductionContrast", "LuminanceNoiseReductionDetail", 
+        "LuminanceSmoothing", "ColorNoiseReduction", "ColorNoiseReductionDetail", 
+        "ColorNoiseReductionSmoothness"
     ],
     "HSL_Hue": [
-        "HueAdjustmentAqua",
-        "HueAdjustmentGreen",
-        "HueAdjustmentBlue",
-        "HueAdjustmentRed",
-        "HueAdjustmentMagenta",
-        "HueAdjustmentPurple",
-        "HueAdjustmentYellow",
-        "HueAdjustmentOrange",
+        "HueAdjustmentAqua", "HueAdjustmentGreen", "HueAdjustmentBlue",
+        "HueAdjustmentRed", "HueAdjustmentMagenta", "HueAdjustmentPurple",
+        "HueAdjustmentYellow", "HueAdjustmentOrange"
     ],
     "HSL_Saturation": [
-        "SaturationAdjustmentAqua",
-        "SaturationAdjustmentGreen",
-        "SaturationAdjustmentBlue",
-        "SaturationAdjustmentRed",
-        "SaturationAdjustmentMagenta",
-        "SaturationAdjustmentPurple",
-        "SaturationAdjustmentYellow",
-        "SaturationAdjustmentOrange",
+        "SaturationAdjustmentAqua", "SaturationAdjustmentGreen", "SaturationAdjustmentBlue",
+        "SaturationAdjustmentRed", "SaturationAdjustmentMagenta", "SaturationAdjustmentPurple",
+        "SaturationAdjustmentYellow", "SaturationAdjustmentOrange"
     ],
     "HSL_Luminance": [
-        "LuminanceAdjustmentAqua",
-        "LuminanceAdjustmentGreen",
-        "LuminanceAdjustmentBlue",
-        "LuminanceAdjustmentRed",
-        "LuminanceAdjustmentMagenta",
-        "LuminanceAdjustmentPurple",
-        "LuminanceAdjustmentYellow",
-        "LuminanceAdjustmentOrange",
+        "LuminanceAdjustmentAqua", "LuminanceAdjustmentGreen", "LuminanceAdjustmentBlue",
+        "LuminanceAdjustmentRed", "LuminanceAdjustmentMagenta", "LuminanceAdjustmentPurple",
+        "LuminanceAdjustmentYellow", "LuminanceAdjustmentOrange"
     ],
     "ToneCurve_Parametric": [
-        "ParametricHighlightSplit",
-        "ParametricMidtoneSplit",
-        "ParametricShadowSplit",
-        "ParametricDarks",
-        "ParametricHighlights",
-        "ParametricLights",
-        "ParametricShadows",
+        "ParametricHighlightSplit", "ParametricMidtoneSplit", "ParametricShadowSplit",
+        "ParametricDarks", "ParametricHighlights", "ParametricLights", "ParametricShadows"
     ],
-    "ToneCurve_Gen": ["ToneCurve2012"],
-    "ToneCurve_RGB": ["ToneCurve2012Red", "ToneCurve2012Green", "ToneCurve2012Blue"],
+    "ToneCurve_Gen": ["ToneCurvePV2012"],
+    "ToneCurve_RGB": ["ToneCurvePV2012Red", "ToneCurvePV2012Green", "ToneCurvePV2012Blue"],
     "GrayMixer_Bundle": [
-        "GrayMixerAqua",
-        "GrayMixerGreen",
-        "GrayMixerBlue",
-        "GrayMixerRed",
-        "GrayMixerMagenta",
-        "GrayMixerPurple",
-        "GrayMixerYellow",
-        "GrayMixerOrange",
-    ],
+        "GrayMixerAqua", "GrayMixerGreen", "GrayMixerBlue", "GrayMixerRed",
+        "GrayMixerMagenta", "GrayMixerPurple", "GrayMixerYellow", "GrayMixerOrange"
+    ]
 }

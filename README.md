@@ -22,8 +22,8 @@ Instead of evaluating sliders individually, the pipeline bundles sliders by the 
 | `HSL_Saturation`        | SaturationAdjustment{...}                                    |
 | `HSL_Luminance`         | LuminanceAdjustment{...}                                     |
 | `ToneCurve_Parametric`  | ParametricHighlightSplit, ParametricMidtoneSplit, ...         |
-| `ToneCurve_Gen`         | ToneCurve2012                                          |
-| `ToneCurve_RGB`         | ToneCurve2012Red, ToneCurve2012Green, ToneCurve2012Blue                                          |
+| `ToneCurve_Gen`         | ToneCurvePV2012                                          |
+| `ToneCurve_RGB`         | ToneCurvePV2012Red, ToneCurvePV2012Green, ToneCurvePV2012Blue                                          |
 | `GrayMixer_Bundle`      | GrayMixer{Aqua,Green,Blue,Red,Magenta,Purple,Yellow,Orange}  |
 
 ### Partial Group Support
