@@ -211,6 +211,7 @@ def process_pid(
     ignore_negative_r2: bool,
     overall_deltaE: bool,
     no_cache: bool,
+    separate_each_slider: bool,
     summary_file: str,
     overall_csv: str,
     is_first_pid: bool,
@@ -314,7 +315,9 @@ def process_pid(
         log.info(f"  Saved MAE/R² to {mae_csv}")
 
         # Step 4: Filter sliders — returns list of (group_name, missing_sliders)
-        selected_with_missing = filter_sliders(all_sliders, mae_r2_df, explicit_sliders, ignore_negative_r2)
+        selected_with_missing = filter_sliders(
+            all_sliders, mae_r2_df, explicit_sliders, ignore_negative_r2, separate_each_slider
+        )
         selected = [grp for grp, _ in selected_with_missing]
         missing_map = {grp: missing for grp, missing in selected_with_missing}
         log.info(f"  Selected model groups for Delta-E: {selected}")
@@ -360,7 +363,7 @@ def process_pid(
             group_missing = missing_map.get(label, [])
 
             # Dynamically compute MAE and R² means across ACTIVE (present) sliders only
-            active_sliders, _ = resolve_slider_group(label, all_sliders)
+            active_sliders, _ = resolve_slider_group(label, all_sliders, separate_each_slider)
             target_lower = {s.lower() for s in active_sliders}
             
             group_rows = mae_r2_df[mae_r2_df["Slider"].str.lower().isin(target_lower)]
@@ -458,6 +461,11 @@ def main():
         "--no_cache", action="store_true", default=False,
         help="Delete DNGs and cache directories after each PID",
     )
+    # Support both spellings for convenience
+    parser.add_argument(
+        "--separate_each_slider", "--seperate_each_slider", action="store_true", default=False,
+        help="Bypass MODEL_GROUPS and run Delta E in complete isolation for every valid slider identified.",
+    )
 
     args = parser.parse_args()
 
@@ -503,6 +511,7 @@ def main():
             ignore_negative_r2=args.ignore_negative_r2,
             overall_deltaE=args.overall_deltaE,
             no_cache=args.no_cache,
+            separate_each_slider=args.separate_each_slider,
             summary_file=summary_file,
             overall_csv=overall_csv,
             is_first_pid=(idx == 0),

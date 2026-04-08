@@ -22,8 +22,8 @@ Instead of evaluating sliders individually, the pipeline bundles sliders by the 
 | `HSL_Saturation`        | SaturationAdjustment{...}                                    |
 | `HSL_Luminance`         | LuminanceAdjustment{...}                                     |
 | `ToneCurve_Parametric`  | ParametricHighlightSplit, ParametricMidtoneSplit, ...         |
-| `ToneCurve_Gen`         | ToneCurvePV2012                                          |
-| `ToneCurve_RGB`         | ToneCurvePV2012Red, ToneCurvePV2012Green, ToneCurvePV2012Blue                                          |
+| `ToneCurve_Gen`         | ToneCurve2012                                          |
+| `ToneCurve_RGB`         | ToneCurve2012Red, ToneCurve2012Green, ToneCurve2012Blue                                          |
 | `GrayMixer_Bundle`      | GrayMixer{Aqua,Green,Blue,Red,Magenta,Purple,Yellow,Orange}  |
 
 ### Partial Group Support
@@ -150,6 +150,12 @@ python main.py \
     --pids_csv pids.csv \
     --output_dir output \
     --no_cache
+
+# Skip model-bundles and analyze EVERY slider individually (e.g. C, H, S instead of CHS)
+python main.py \
+    --pids_csv pids.csv \
+    --output_dir output \
+    --seperate_each_slider
 ```
 
 ## CLI Arguments
@@ -163,3 +169,4 @@ python main.py \
 | `--ignore_negative_r2`| No       | False      | Skip groups with negative mean R²                        |
 | `--overall_deltaE`    | No       | False      | Run full Base→Custom Delta-E first                       |
 | `--no_cache`          | No       | False      | Delete DNGs/cache after each PID                         |
+| `--seperate_each_slider`| No     | False      | Force bypass model groupings and analyze globally 1:1    |

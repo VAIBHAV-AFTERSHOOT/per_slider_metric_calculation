@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 import pandas as pd
-
+from config import EDITOR_PATH,METRICS_WORKERS
 log = logging.getLogger("per_slider_delta_e")
 
 # Attempt to import local editing-ml pipeline wrapper
@@ -54,7 +54,7 @@ def run_delta_e_for_profile(
     import json as json_mod
     from editlib.metrics.pipeline import EditsMetricsPipeline, Editor
 
-    EDITOR_PATH = "/home/ubuntu/workspace/DNG_Converter/Adobe DNG Converter.exe"
+    # EDITOR_PATH = "/home/ubuntu/workspace/DNG_Converter/Adobe DNG Converter.exe"
 
     pipeline_out_dir = os.path.join(output_dir, "delta_e_comparisons")
     cache_dir = os.path.join(output_dir, "cache_bulk_metrics")
@@ -91,7 +91,7 @@ def run_delta_e_for_profile(
             out_dir=Path(pipeline_out_dir),
             editor=Editor.AdobeDNGConverter,
             editor_path=EDITOR_PATH,
-            workers=6,
+            workers=METRICS_WORKERS,
             keep_cache=True,
             comparisons=comparisons,
         )

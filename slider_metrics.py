@@ -200,9 +200,11 @@ def filter_sliders(
     mae_r2_df: pd.DataFrame,
     explicit_sliders: Optional[list[str]],
     ignore_negative_r2: bool,
+    separate_each_slider: bool = False,
 ) -> list[tuple[str, list[str]]]:
     """
-    Returns a list of (group_name, missing_sliders) tuples for active MODEL_GROUPS.
+    Returns a list of (group_name, missing_sliders) tuples.
+    If separate_each_slider=True, treats every single slider individually.
 
     Previous logic: Required ALL sliders in a group to be present (strict subset).
                     If even one slider was absent, the entire group was silently skipped.
@@ -213,21 +215,41 @@ def filter_sliders(
     """
     target_groups = []
 
-    # 1. Determine explicitly requested groups (or all if None)
-    if explicit_sliders:
-        req_lower_map = {s.lower(): s for s in explicit_sliders}
-        for grp_name in MODEL_GROUPS.keys():
-            if grp_name.lower() in req_lower_map:
-                target_groups.append(grp_name)
+    if separate_each_slider:
+        # Treat every valid slider natively
+        if explicit_sliders:
+            # Expand explicit sliders if they correspond to MODEL_GROUPS keys
+            expanded_explicit_sliders = set()
+            for exp in explicit_sliders:
+                if grp := next((k for k in MODEL_GROUPS if k.lower() == exp.lower()), None):
+                    expanded_explicit_sliders.update(s.lower() for s in MODEL_GROUPS[grp])
+                else:
+                    expanded_explicit_sliders.add(exp.lower())
+
+            for raw_s in all_raw_sliders:
+                if raw_s.lower() in expanded_explicit_sliders:
+                    target_groups.append(raw_s)
+        else:
+            target_groups = list(all_raw_sliders)
     else:
-        target_groups = list(MODEL_GROUPS.keys())
+        # Determine explicitly requested groups against MODEL_GROUPS
+        if explicit_sliders:
+            req_lower_map = {s.lower(): s for s in explicit_sliders}
+            for grp_name in MODEL_GROUPS.keys():
+                if grp_name.lower() in req_lower_map:
+                    target_groups.append(grp_name)
+        else:
+            target_groups = list(MODEL_GROUPS.keys())
 
     # Lowercase lookup for available raw sliders
     available_raw_lower = {s.lower() for s in all_raw_sliders}
 
     filtered_groups: list[tuple[str, list[str]]] = []
     for grp in target_groups:
-        req_sliders = MODEL_GROUPS[grp]
+        if separate_each_slider:
+            req_sliders = [grp]
+        else:
+            req_sliders = MODEL_GROUPS[grp]
         req_lower = {s.lower() for s in req_sliders}
 
         # 2. Include group if at least 1 slider is present (was: strict subset)
@@ -257,14 +279,18 @@ def filter_sliders(
     return filtered_groups
 
 
-def resolve_slider_group(group_name: str, all_raw_sliders: list[str]) -> tuple[list[str], list[str]]:
+def resolve_slider_group(
+    group_name: str, 
+    all_raw_sliders: list[str], 
+    separate_each_slider: bool = False
+) -> tuple[list[str], list[str]]:
     """
     Given a MODEL_GROUP string, returns (active_sliders, missing_sliders).
-    active_sliders are those actually found in the CSV; missing are defined but absent.
+    If separate_each_slider=True, skips MODEL_GROUPS and forces a 1:1 mapping.
     """
     available_lower = {s.lower() for s in all_raw_sliders}
 
-    if group_name in MODEL_GROUPS:
+    if not separate_each_slider and group_name in MODEL_GROUPS:
         defined = MODEL_GROUPS[group_name]
         active = [s for s in defined if s.lower() in available_lower]
         missing = [s for s in defined if s.lower() not in available_lower]
